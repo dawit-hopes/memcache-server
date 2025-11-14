@@ -23,6 +23,9 @@ type Item struct {
 type StoreInterface interface {
 	Set(parts []string, conn net.Conn, reader *bufio.Reader)
 	Get(parts []string, conn net.Conn)
+	Add(parts []string, conn net.Conn, reader *bufio.Reader)
+	Replace(parts []string, conn net.Conn, reader *bufio.Reader)
+	Delete(parts []string, conn net.Conn)
 }
 
 type Store struct {
@@ -46,7 +49,6 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 	}
 
 	key := parts[1]
-
 	f, err := strconv.ParseUint(parts[2], 10, 16)
 	if err != nil {
 		log.Printf("Invalid flags value: %v", parts[2])
@@ -136,5 +138,88 @@ func (s *Store) Get(parts []string, conn net.Conn) {
 	_, err := conn.Write([]byte("END\r\n"))
 	if err != nil {
 		log.Printf(failedErrorMessage, err)
+	}
+}
+
+func (s *Store) Add(parts []string, conn net.Conn, reader *bufio.Reader) {
+	if len(parts) < 5 {
+		log.Printf("Invalid add command: %v", parts)
+		return
+	}
+
+	key := parts[1]
+
+	s.mu.RLock()
+	_, exists := s.Data[key]
+	s.mu.RUnlock()
+
+	if exists {
+		noreply := len(parts) == 6 && parts[5] == "noreply"
+		if !noreply {
+			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			if err != nil {
+				log.Printf(failedErrorMessage, err)
+			}
+		}
+		return
+	}
+
+	s.Set(parts, conn, reader)
+}
+
+func (s *Store) Replace(parts []string, conn net.Conn, reader *bufio.Reader) {
+	if len(parts) < 5 {
+		log.Printf("Invalid replace command: %v", parts)
+		return
+	}
+
+	key := parts[1]
+
+	s.mu.RLock()
+	_, exists := s.Data[key]
+	s.mu.RUnlock()
+
+	if !exists {
+		noreply := len(parts) == 6 && parts[5] == "noreply"
+		if !noreply {
+			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			if err != nil {
+				log.Printf(failedErrorMessage, err)
+			}
+		}
+		return
+	}
+
+	s.Set(parts, conn, reader)
+}
+
+func (s *Store) Delete(parts []string, conn net.Conn) {
+	if len(parts) < 2 {
+		log.Printf("Invalid delete command: %v", parts)
+		return
+	}
+
+	key := parts[1]
+	noreply := len(parts) == 3 && parts[2] == "noreply"
+
+	s.mu.Lock()
+	_, exists := s.Data[key]
+	if exists {
+		delete(s.Data, key)
+	}
+	s.mu.Unlock()
+
+	if !noreply {
+		if exists {
+			_, err := conn.Write([]byte("DELETED\r\n"))
+			if err != nil {
+				log.Printf(failedErrorMessage, err)
+			}
+		} else {
+			_, err := conn.Write([]byte("NOT_FOUND\r\n"))
+			if err != nil {
+				log.Printf(failedErrorMessage, err)
+			}
+		}
 	}
 }
