@@ -7,6 +7,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"time"
 )
 
 var (
@@ -14,8 +15,9 @@ var (
 )
 
 type Item struct {
-	Value []byte
-	Flags uint16
+	Value          []byte
+	Flags          uint16
+	ExpirationTime time.Time
 }
 
 type StoreInterface interface {
@@ -35,7 +37,7 @@ func NewStore() StoreInterface {
 	}
 }
 
-//<command name> <key> <flags> <exptime> <byte count> [noreply]\r\n
+// <command name> <key> <flags> <exptime> <byte count> [noreply]\r\n
 // <data block>\r\n
 func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 	if len(parts) < 5 {
@@ -51,6 +53,18 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 		return
 	}
 	flags := uint16(f)
+
+	expirationSeconds, err := strconv.Atoi(parts[3])
+	if err != nil {
+		log.Printf("Invalid expiration value: %v", parts[3])
+		return
+	}
+	var expirationTime time.Time
+	if expirationSeconds > 0 {
+		expirationTime = time.Now().Add(time.Duration(expirationSeconds) * time.Second)
+	} else {
+		expirationTime = time.Time{}
+	}
 
 	bytesCount, err := strconv.Atoi(parts[4])
 	if err != nil {
@@ -74,7 +88,7 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 	}
 
 	s.mu.Lock()
-	s.Data[key] = Item{Value: data, Flags: flags}
+	s.Data[key] = Item{Value: data, Flags: flags, ExpirationTime: expirationTime}
 	s.mu.Unlock()
 
 	if !noreply {
@@ -97,6 +111,10 @@ func (s *Store) Get(parts []string, conn net.Conn) {
 	key := parts[1]
 	s.mu.RLock()
 	item, exists := s.Data[key]
+	if exists && !item.ExpirationTime.IsZero() && time.Now().After(item.ExpirationTime) {
+		delete(s.Data, key)
+		exists = false
+	}
 	s.mu.RUnlock()
 
 	if exists {
