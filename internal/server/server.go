@@ -1,16 +1,21 @@
 package server
 
 import (
+	"bufio"
 	"log"
 	"net"
+	"strings"
+
+	"github.com/dawit-hopes/memcache-server/internal/store"
 )
 
 type TCPServer struct {
-	Port string
+	Port  string
+	store store.StoreInterface
 }
 
-func NewServer(port string) *TCPServer {
-	return &TCPServer{Port: port}
+func NewServer(port string, store store.StoreInterface) *TCPServer {
+	return &TCPServer{Port: port, store: store}
 }
 
 func (s *TCPServer) Start() {
@@ -35,5 +40,33 @@ func (s *TCPServer) Start() {
 
 func (s *TCPServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
-	log.Printf("Accepted connection from %s", conn.RemoteAddr().String())
+	reader := bufio.NewReader(conn)
+
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			log.Printf("Failed to read from connection: %v", err)
+			return
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Split(line, " ")
+		command := strings.ToLower(parts[0])
+
+		switch command {
+		case "set":
+			s.store.Set(parts, conn, reader)
+		case "get":
+			s.store.Get(parts, conn)
+		default:
+			if _, err := conn.Write([]byte("ERROR\r\n")); err != nil {
+				log.Printf("Failed to write to connection: %v", err)
+				return
+			}
+		}
+	}
 }
