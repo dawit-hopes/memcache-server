@@ -68,6 +68,10 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 			s.store.Replace(parts, conn, reader)
 		case "delete":
 			s.store.Delete(parts, conn)
+		case "append":
+			s.store.Append(parts, conn, reader)
+		case "prepend":
+			s.store.Prepend(parts, conn, reader)
 		default:
 			if _, err := conn.Write([]byte("ERROR\r\n")); err != nil {
 				log.Printf("Failed to write to connection: %v", err)

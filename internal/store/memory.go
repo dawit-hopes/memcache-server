@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	failedErrorMessage = "Failed to write to connection: %v"
+	failedErrorMessage  = "Failed to write to connection: %v"
+	failedToReadMessage = "Invalid bytes count value: %v"
 )
 
 type Item struct {
@@ -26,6 +27,8 @@ type StoreInterface interface {
 	Add(parts []string, conn net.Conn, reader *bufio.Reader)
 	Replace(parts []string, conn net.Conn, reader *bufio.Reader)
 	Delete(parts []string, conn net.Conn)
+	Append(parts []string, conn net.Conn, reader *bufio.Reader)
+	Prepend(parts []string, conn net.Conn, reader *bufio.Reader)
 }
 
 type Store struct {
@@ -70,7 +73,7 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 
 	bytesCount, err := strconv.Atoi(parts[4])
 	if err != nil {
-		log.Printf("Invalid bytes count value: %v", parts[4])
+		log.Printf(failedToReadMessage, parts[4])
 		return
 	}
 
@@ -79,7 +82,7 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 	data := make([]byte, bytesCount)
 	_, err = io.ReadFull(reader, data)
 	if err != nil {
-		log.Printf("Failed to read data block: %v", err)
+		log.Printf(failedToReadMessage, err)
 		return
 	}
 
@@ -220,6 +223,118 @@ func (s *Store) Delete(parts []string, conn net.Conn) {
 			if err != nil {
 				log.Printf(failedErrorMessage, err)
 			}
+		}
+	}
+}
+
+func (s *Store) Append(parts []string, conn net.Conn, reader *bufio.Reader) {
+	if len(parts) < 5 {
+		log.Printf("Invalid append command: %v", parts)
+		return
+	}
+
+	key := parts[1]
+
+	s.mu.RLock()
+	item, exists := s.Data[key]
+	s.mu.RUnlock()
+
+	if !exists {
+		noreply := len(parts) == 6 && parts[5] == "noreply"
+		if !noreply {
+			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			if err != nil {
+				log.Printf(failedErrorMessage, err)
+			}
+		}
+		return
+	}
+
+	bytesCount, err := strconv.Atoi(parts[4])
+	if err != nil {
+		log.Printf(failedToReadMessage, parts[4])
+		return
+	}
+
+	data := make([]byte, bytesCount)
+	_, err = io.ReadFull(reader, data)
+	if err != nil {
+		log.Printf(failedToReadMessage, err)
+		return
+	}
+
+	_, err = reader.ReadString('\n')
+	if err != nil {
+		log.Printf("Failed to read trailing newline: %v", err)
+		return
+	}
+
+	s.mu.Lock()
+	item.Value = append(item.Value, data...)
+	s.Data[key] = item
+	s.mu.Unlock()
+
+	noreply := len(parts) == 6 && parts[5] == "noreply"
+	if !noreply {
+		_, err := conn.Write([]byte("STORED\r\n"))
+		if err != nil {
+			log.Printf(failedErrorMessage, err)
+		}
+	}
+}
+
+func (s *Store) Prepend(parts []string, conn net.Conn, reader *bufio.Reader) {
+	if len(parts) < 5 {
+		log.Printf("Invalid prepend command: %v", parts)
+		return
+	}
+
+	key := parts[1]
+
+	s.mu.RLock()
+	item, exists := s.Data[key]
+	s.mu.RUnlock()
+
+	if !exists {
+		noreply := len(parts) == 6 && parts[5] == "noreply"
+		if !noreply {
+			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			if err != nil {
+				log.Printf(failedErrorMessage, err)
+			}
+		}
+		return
+	}
+
+	bytesCount, err := strconv.Atoi(parts[4])
+	if err != nil {
+		log.Printf(failedToReadMessage, parts[4])
+		return
+	}
+
+	data := make([]byte, bytesCount)
+	_, err = io.ReadFull(reader, data)
+	if err != nil {
+		log.Printf("Failed to read data block: %v", err)
+		return
+	}
+
+	_, err = reader.ReadString('\n')
+	if err != nil {
+		log.Printf("Failed to read trailing newline: %v", err)
+		return
+	}
+
+	s.mu.Lock()
+	item.Value = append(data, item.Value...)
+	s.Data[key] = item
+	s.mu.Unlock()
+
+	noreply := len(parts) == 6 && parts[5] == "noreply"
+	if !noreply {
+		_, err := conn.Write([]byte("STORED\r\n"))
+		if err != nil {
+			log.Printf(failedErrorMessage, err)
 		}
 	}
 }
