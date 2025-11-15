@@ -11,8 +11,11 @@ import (
 )
 
 var (
-	failedErrorMessage  = "Failed to write to connection: %v"
-	failedToReadMessage = "Invalid bytes count value: %v"
+	failedErrorMessage   = "Failed to write to connection: %v"
+	failedToReadMessage  = "Invalid bytes count value: %v"
+	storedMessage        = "STORED\r\n"
+	notStoredMessage     = "NOT_STORED\r\n"
+	failedToReadTrailing = "Failed to read trailing newline: %v"
 )
 
 type Item struct {
@@ -88,7 +91,7 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 
 	_, err = reader.ReadString('\n')
 	if err != nil {
-		log.Printf("Failed to read trailing newline: %v", err)
+		log.Printf(failedToReadTrailing, err)
 		return
 	}
 
@@ -97,7 +100,7 @@ func (s *Store) Set(parts []string, conn net.Conn, reader *bufio.Reader) {
 	s.mu.Unlock()
 
 	if !noreply {
-		_, err := conn.Write([]byte("STORED\r\n"))
+		_, err := conn.Write([]byte(storedMessage))
 		if err != nil {
 			log.Printf(failedErrorMessage, err)
 		}
@@ -159,7 +162,7 @@ func (s *Store) Add(parts []string, conn net.Conn, reader *bufio.Reader) {
 	if exists {
 		noreply := len(parts) == 6 && parts[5] == "noreply"
 		if !noreply {
-			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			_, err := conn.Write([]byte(notStoredMessage))
 			if err != nil {
 				log.Printf(failedErrorMessage, err)
 			}
@@ -185,7 +188,7 @@ func (s *Store) Replace(parts []string, conn net.Conn, reader *bufio.Reader) {
 	if !exists {
 		noreply := len(parts) == 6 && parts[5] == "noreply"
 		if !noreply {
-			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			_, err := conn.Write([]byte(notStoredMessage))
 			if err != nil {
 				log.Printf(failedErrorMessage, err)
 			}
@@ -242,7 +245,7 @@ func (s *Store) Append(parts []string, conn net.Conn, reader *bufio.Reader) {
 	if !exists {
 		noreply := len(parts) == 6 && parts[5] == "noreply"
 		if !noreply {
-			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			_, err := conn.Write([]byte(notStoredMessage))
 			if err != nil {
 				log.Printf(failedErrorMessage, err)
 			}
@@ -265,7 +268,7 @@ func (s *Store) Append(parts []string, conn net.Conn, reader *bufio.Reader) {
 
 	_, err = reader.ReadString('\n')
 	if err != nil {
-		log.Printf("Failed to read trailing newline: %v", err)
+		log.Printf(failedToReadTrailing, err)
 		return
 	}
 
@@ -276,7 +279,7 @@ func (s *Store) Append(parts []string, conn net.Conn, reader *bufio.Reader) {
 
 	noreply := len(parts) == 6 && parts[5] == "noreply"
 	if !noreply {
-		_, err := conn.Write([]byte("STORED\r\n"))
+		_, err := conn.Write([]byte(storedMessage))
 		if err != nil {
 			log.Printf(failedErrorMessage, err)
 		}
@@ -298,7 +301,7 @@ func (s *Store) Prepend(parts []string, conn net.Conn, reader *bufio.Reader) {
 	if !exists {
 		noreply := len(parts) == 6 && parts[5] == "noreply"
 		if !noreply {
-			_, err := conn.Write([]byte("NOT_STORED\r\n"))
+			_, err := conn.Write([]byte(notStoredMessage))
 			if err != nil {
 				log.Printf(failedErrorMessage, err)
 			}
@@ -321,7 +324,7 @@ func (s *Store) Prepend(parts []string, conn net.Conn, reader *bufio.Reader) {
 
 	_, err = reader.ReadString('\n')
 	if err != nil {
-		log.Printf("Failed to read trailing newline: %v", err)
+		log.Printf(failedToReadTrailing, err)
 		return
 	}
 
@@ -332,7 +335,7 @@ func (s *Store) Prepend(parts []string, conn net.Conn, reader *bufio.Reader) {
 
 	noreply := len(parts) == 6 && parts[5] == "noreply"
 	if !noreply {
-		_, err := conn.Write([]byte("STORED\r\n"))
+		_, err := conn.Write([]byte(storedMessage))
 		if err != nil {
 			log.Printf(failedErrorMessage, err)
 		}
